@@ -51,6 +51,7 @@ st.markdown("""
     
     .stButton>button {
         background-color: white;
+        color: black !important;
         border: 3px solid black !important;
         border-radius: 12px !important;
         font-weight: 900 !important;
@@ -58,7 +59,7 @@ st.markdown("""
         transition: all 0.2s;
         width: 100%;
         text-transform: uppercase;
-        font-size: 14px;
+        font-size: 16px; /* Slightly larger for better readability */
     }
     
     .stButton>button:hover {
@@ -66,6 +67,7 @@ st.markdown("""
         box-shadow: 6px 6px 0px black !important;
         background-color: #fef9c3;
         border-color: black !important;
+        color: black !important;
     }
     
     .stButton>button:active {
@@ -74,13 +76,15 @@ st.markdown("""
     }
 
     .owned-btn>button {
-        background-color: #10b981 !important; /* Emerald 500 */
+        background-color: #059669 !important; /* Emerald 600 - darker for better contrast */
         color: white !important;
+        border-color: black !important;
     }
 
     .missing-btn>button {
         background-color: white !important;
         color: black !important;
+        border-color: black !important;
     }
     
     h1, h2, h3 {
@@ -208,12 +212,12 @@ with tab1:
     with search_col1:
         search = st.text_input("Suchen...", placeholder="Nummer oder Titel", label_visibility="collapsed")
     with search_col2:
-        filter_mode = st.selectbox("Filter", ["Alle", "Besessen", "Fehlend"], label_visibility="collapsed")
+        filter_mode = st.selectbox("Filter", ["Alle", "Im Besitz", "Fehlend"], label_visibility="collapsed")
     
     # Filter logic
     filtered = [v for v in st.session_state.volumes if search.lower() in v['title'].lower() or search in str(v['nr'])]
     
-    if filter_mode == "Besessen":
+    if filter_mode == "Im Besitz":
         filtered = [v for v in filtered if v['nr'] in st.session_state.owned]
     elif filter_mode == "Fehlend":
         filtered = [v for v in filtered if v['nr'] not in st.session_state.owned]
@@ -246,7 +250,7 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                btn_label = "BESITZEN" if not is_owned else "ENTFERNEN"
+                btn_label = "HABE ICH" if not is_owned else "ENTFERNEN"
                 btn_key = f"btn_{vol['nr']}"
                 
                 # Wrap button in a div to apply custom class for color

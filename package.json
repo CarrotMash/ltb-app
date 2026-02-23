@@ -1,0 +1,24 @@
+{
+  "name": "ltb-sammel-zentrale",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pip install -r requirements.txt && streamlit run app.py --server.port 3000 --server.address 0.0.0.0",
+    "start": "streamlit run app.py --server.port 3000 --server.address 0.0.0.0",
+    "build": "echo 'No build step needed for Streamlit'",
+    "lint": "echo 'Linting skipped for Python transition'",
+    "preview": "streamlit run app.py --server.port 3000 --server.address 0.0.0.0"
+  },
+  "dependencies": {
+    "react-dom": "^19.2.4",
+    "react": "^19.2.4",
+    "@google/genai": "^1.41.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

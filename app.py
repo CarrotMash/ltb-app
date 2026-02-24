@@ -1,305 +1,640 @@
-
 import streamlit as st
 import pandas as pd
-from ltb_data import generate_volumes
-from gemini_sync import fetch_missing_titles, fetch_latest_volumes
-from supabase_db import load_collection, save_collection
-import json
+from streamlit_calendar import calendar
+from datetime import datetime, date
+import zoneinfo
+from supabase import create_client
 import os
+import uuid
 
-# Page Config
-st.set_page_config(page_title="LTB Sammel-Zentrale", page_icon="🦆", layout="wide")
 
-# Custom CSS for Comic Look
+# --- DATENBANK VERBINDUNG ---
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(url, key)
+
+# --- KONFIGURATION ---
+CHILD_COLORS = {"Mila": "#FF85A1", "Jojo": "#8B0000", "Mikko": "#2E7D32"}
+SUBJECTS = ["Englisch", "Französisch", "Mathematik", "Deutsch", "Musik", "Biologie", "Chemie", "Kunst", "Philosophie", "Geschichte", "Physik", "Spanisch", "WiPo", "Geografie", "Sport", "Religion", "Freistunde"]
+DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
+TIMES = {1: "07:50-08:35", 2: "08:40-09:25", 3: "09:40-10:25", 4: "10:30-11:15", 5: "11:30-12:15", 6: "12:20-13:05", 7: "13:35-14:20"}
+
+FERIEN_DATA = {
+    2026: [
+        {"Ferien": "Osterferien", "Zeitraum": "26.03.2026 - 11.04.2026"},
+        {"Ferien": "Sommerferien", "Zeitraum": "13.07.2026 - 22.08.2026"},
+        {"Ferien": "Herbstferien", "Zeitraum": "12.10.2026 - 24.10.2026"},
+        {"Ferien": "Weihnachtsferien", "Zeitraum": "21.12.2026 - 06.01.2027"}
+    ],
+    2027: [
+        {"Ferien": "Osterferien", "Zeitraum": "22.03.2027 - 03.04.2027"},
+        {"Ferien": "Sommerferien", "Zeitraum": "12.07.2027 - 21.08.2027"},
+        {"Ferien": "Herbstferien", "Zeitraum": "11.10.2027 - 23.10.2027"},
+        {"Ferien": "Weihnachtsferien", "Zeitraum": "20.12.2027 - 05.01.2028"}
+    ]
+}
+
+# --- SESSION STATE INITIALISIERUNG ---
+if 'view' not in st.session_state: st.session_state.view = 'start'
+if 'cal_key' not in st.session_state: st.session_state.cal_key = str(uuid.uuid4())
+if 'stundenplan_child' not in st.session_state: st.session_state.stundenplan_child = "Mila"
+if 'editing_grade' not in st.session_state: st.session_state.editing_grade = False
+if 'selected_date' not in st.session_state: st.session_state.selected_date = None
+if 'edit_id' not in st.session_state: st.session_state.edit_id = None
+
+st.set_page_config(page_title="Schulplaner", page_icon="📅", layout="centered")
+
+# --- CUSTOM DESIGN (CSS) ---
 st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap');
-    
-    html, body, [class*="st-"] {
-        font-family: 'Inter', sans-serif;
+    <style>
+    .block-container { padding-top: 2.7rem !important; padding-bottom: 0rem !important; }
+
+    .main-header {
+        font-size: 2.2rem !important; font-weight: 900 !important;
+        text-align: center; margin-top: -10px; margin-bottom: 20px;
+        background-color: #000000; color: #FFFFFF !important;
+        padding: 12px; border-radius: 10px; line-height: 1.1; white-space: nowrap;
     }
-    
-    .comic-card {
-        background: white;
-        border: 4px solid black;
-        border-radius: 20px;
-        padding: 20px;
-        box-shadow: 8px 8px 0px black;
-        margin-bottom: 20px;
-        transition: transform 0.2s;
+
+    [data-testid="stImage"] > img {
+        width: 44% !important; margin-left: auto; margin-right: auto;
+        display: block; border-radius: 10px;
     }
-    
-    .comic-card:hover {
-        transform: translate(-2px, -2px);
-        box-shadow: 10px 10px 0px black;
+
+    .fc-button-primary {
+        background-color: #FF4B4B !important; border-color: #FF4B4B !important;
+        color: #FFFFFF !important; font-weight: bold !important;
+        font-size: 0.8rem !important; text-transform: capitalize !important;
     }
-    
-    .ltb-logo {
-        background: #e11d48;
-        color: white;
-        font-weight: 900;
-        padding: 10px 25px;
-        border: 4px solid black;
-        border-radius: 12px;
-        box-shadow: 6px 6px 0px black;
-        display: inline-block;
-        transform: rotate(-3deg);
-        font-style: italic;
-        font-size: 32px;
-        margin-bottom: 20px;
+    .fc-button-active { background-color: #B91D1D !important; border-color: #B91D1D !important; }
+    .fc-toolbar-title { font-size: 1.1rem !important; font-weight: bold !important; }
+    .fc-event-title { font-size: 0.75rem !important; white-space: pre-wrap !important; font-weight: bold !important; line-height: 1.1 !important; }
+    .fc-day-sat, .fc-day-sun { background-color: #F0F2F6 !important; }
+    .fc-list-event-time { display: none !important; }
+
+    /* Einheitliche Button-Höhe im Bus-Check */
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button {
+        height: 60px !important;
+        white-space: normal !important;
+        line-height: 1.3 !important;
+        font-size: 0.85rem !important;
     }
-    
-    .stButton>button {
-        background-color: white;
-        color: black !important;
-        border: 3px solid black !important;
-        border-radius: 12px !important;
-        font-weight: 900 !important;
-        box-shadow: 4px 4px 0px black !important;
-        transition: all 0.2s;
+
+    .bus-card {
+        background: white; border: 1px solid #ddd; padding: 12px;
+        border-radius: 10px; margin-bottom: 10px;
+        border-left: 6px solid #FF4B4B;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    .delay { color: #FF4B4B; font-weight: bold; }
+    .ontime { color: #2E7D32; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+
+
+
+# =============================================================================
+# --- 1. DASHBOARD ---
+# =============================================================================
+if st.session_state.view == 'start':
+    st.markdown('<p class="main-header">Schulplaner</p>', unsafe_allow_html=True)
+    if os.path.exists("startbild.jpg"):
+        st.image("startbild.jpg")
+
+    # --- Klausur-Frühwarnung: Banner wenn Klausur in ≤ 2 Tagen ---
+    try:
+        from datetime import timedelta
+        res_warn = supabase.table("klausuren").select("*").execute()
+        heute = date.today()
+        bald = []
+        for k in res_warn.data:
+            try:
+                k_date = date.fromisoformat(k["start_date"])
+                delta = (k_date - heute).days
+                if 0 <= delta <= 2:
+                    bald.append((delta, k))
+            except Exception:
+                pass
+        if bald:
+            bald.sort(key=lambda x: x[0])
+            for delta, k in bald:
+                titel = k["titel"].replace("\n", " · ")
+                if delta == 0:
+                    wann = "⚡ **heute!**"
+                elif delta == 1:
+                    wann = "⏰ **morgen**"
+                else:
+                    wann = "📅 **übermorgen**"
+                st.warning(f"🔔 Klausur {wann}: **{titel}**")
+    except Exception:
+        pass
+
+    st.write("")
+    # 2x2 Button-Grid: vollständig via HTML/CSS – Streamlit-Spalten wrappen auf Smartphone
+    # Buttons lösen session_state-Wechsel via query_params-Trick nicht aus,
+    # daher: reines HTML mit st.markdown + separate unsichtbare st.buttons als Trigger
+    if 'nav' not in st.session_state:
+        st.session_state.nav = None
+
+    st.markdown("""
+    <style>
+    .menu-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
         width: 100%;
-        text-transform: uppercase;
-        font-size: 16px; /* Slightly larger for better readability */
+        margin: 0 0 12px 0;
     }
-    
-    .stButton>button:hover {
-        transform: translate(-2px, -2px);
-        box-shadow: 6px 6px 0px black !important;
-        background-color: #fef9c3;
-        border-color: black !important;
-        color: black !important;
-    }
-    
-    .stButton>button:active {
-        transform: translate(2px, 2px);
-        box-shadow: 0px 0px 0px black !important;
-    }
-
-    .owned-btn>button {
-        background-color: #059669 !important; /* Emerald 600 - darker for better contrast */
+    .menu-btn {
+        background-color: #FF4B4B;
         color: white !important;
-        border-color: black !important;
-    }
-
-    .missing-btn>button {
-        background-color: white !important;
-        color: black !important;
-        border-color: black !important;
-    }
-    
-    h1, h2, h3 {
-        font-weight: 900 !important;
-        text-transform: uppercase;
-        letter-spacing: -1px;
-        color: black;
-    }
-
-    .owned-row {
-        background-color: #ecfdf5; /* Emerald 50 */
-        border: 4px solid #059669; /* Emerald 600 */
-        border-radius: 16px;
-        padding: 12px;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        box-shadow: 4px 4px 0px #059669;
-    }
-
-    .missing-row {
-        background-color: white;
-        border: 4px solid black;
-        border-radius: 16px;
-        padding: 12px;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        box-shadow: 4px 4px 0px black;
-    }
-
-    .vol-nr {
-        background: black;
-        color: white;
-        font-weight: 900;
-        padding: 6px 14px;
-        border-radius: 10px;
-        margin-right: 15px;
-        font-size: 20px;
-        min-width: 60px;
+        border: none;
+        border-radius: 8px;
+        padding: 16px 8px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        width: 100%;
+        cursor: pointer;
         text-align: center;
+        line-height: 1.3;
     }
-
-    .vol-title {
-        font-weight: 800;
-        font-size: 18px;
-        flex-grow: 1;
-        color: #1f2937;
+    .menu-btn:active { background-color: #c0392b; }
+    /* Streamlit-Spalten niemals umbrechen */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
     }
-</style>
-""", unsafe_allow_html=True)
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        min-width: 0 !important;
+        flex: 1 1 0 !important;
+    }
+    /* native Streamlit-Buttons verkleinern */
+    [data-testid="stHorizontalBlock"] button {
+        font-size: 0.78rem !important;
+        padding: 0.4rem 0.2rem !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
+        min-height: 56px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# State Management
-if 'volumes' not in st.session_state:
-    st.session_state.volumes = generate_volumes(608)
-if 'username' not in st.session_state:
-    st.session_state.username = None
-if 'owned' not in st.session_state:
-    st.session_state.owned = []
+    r1a, r1b = st.columns(2)
+    with r1a:
+        if st.button("📅 KLAUSUREN", use_container_width=True, type="primary", key="btn_kl"):
+            st.session_state.view = 'klausuren'; st.rerun()
+    with r1b:
+        if st.button("🏫 STUNDENPLÄNE", use_container_width=True, type="primary", key="btn_sp"):
+            st.session_state.view = 'stundenplan'; st.rerun()
+    r2a, r2b = st.columns(2)
+    with r2a:
+        if st.button("🚌 BUS-CHECK", use_container_width=True, type="primary", key="btn_bc"):
+            st.session_state.view = 'bus'; st.rerun()
+    with r2b:
+        if st.button("🌴 FERIEN", use_container_width=True, type="primary", key="btn_fe"):
+            st.session_state.view = 'ferien'; st.rerun()
 
-# Login Logic
-if not st.session_state.username:
-    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 80vh;">', unsafe_allow_html=True)
-    with st.container():
-        st.markdown('<div class="comic-card" style="width: 400px; text-align: center;">', unsafe_allow_html=True)
-        st.markdown('<div class="ltb-logo">LTB</div>', unsafe_allow_html=True)
-        st.header("Zentrale")
-        user_input = st.text_input("Dein Name:", placeholder="z.B. Donald")
-        if st.button("Einloggen"):
-            if user_input:
-                st.session_state.username = user_input
-                st.session_state.owned = load_collection(user_input)
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
 
-# Header
-header_col1, header_col2 = st.columns([1, 4])
-with header_col1:
-    st.markdown('<div class="ltb-logo">LTB</div>', unsafe_allow_html=True)
-with header_col2:
-    st.title("Sammel-Zentrale")
-    st.write(f"Willkommen zurück, **{st.session_state.username}**!")
+# =============================================================================
+# --- 2. KLAUSUREN ---
+# =============================================================================
+elif st.session_state.view == 'klausuren':
+    try:
+        res = supabase.table("klausuren").select("*").execute()
+        k_data, k_df = res.data, pd.DataFrame(res.data)
+    except:
+        k_data, k_df = [], pd.DataFrame()
 
-# Sidebar / Stats
-with st.sidebar:
-    st.markdown(f'<div class="comic-card">', unsafe_allow_html=True)
-    st.header("Status")
-    total = len(st.session_state.volumes)
-    owned_count = len(st.session_state.owned)
-    percent = int((owned_count / total) * 100) if total > 0 else 0
-    
-    st.metric("Fortschritt", f"{percent}%", f"{owned_count} / {total}")
-    st.progress(percent / 100)
-    
-    if st.button("💾 Speichern"):
-        save_collection(st.session_state.username, st.session_state.owned)
-        st.success("Gespeichert!")
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.sidebar:
+        st.header("Klausuren")
+        if st.button("← Hauptmenü"):
+            st.session_state.view = 'start'; st.rerun()
+        with st.form("sb_form", clear_on_submit=True):
+            sc = st.selectbox("Kind", list(CHILD_COLORS.keys()))
+            ss = st.selectbox("Fach", SUBJECTS)
+            sd = st.date_input("Datum", date.today(), format="DD.MM.YYYY")
+            sn = st.text_input("Notiz")
+            if st.form_submit_button("Speichern"):
+                supabase.table("klausuren").insert({
+                    "datum": sd.strftime('%d.%m.%Y'), "titel": f"{sc}\n{ss}",
+                    "start_date": str(sd), "color": CHILD_COLORS[sc], "child": sc, "note": sn
+                }).execute()
+                st.session_state.cal_key = str(uuid.uuid4()); st.rerun()
 
-    st.markdown('<div class="comic-card">', unsafe_allow_html=True)
-    st.header("Aktionen")
-    if st.button("Alle bis 608"):
-        st.session_state.owned = list(range(1, 609))
-        save_collection(st.session_state.username, st.session_state.owned)
-        st.rerun()
-        
-    if st.button("Reset"):
-        st.session_state.owned = []
-        save_collection(st.session_state.username, st.session_state.owned)
-        st.rerun()
-    
-    if st.button("Abmelden"):
-        st.session_state.username = None
-        st.session_state.owned = []
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    zart_gruen = "#C8E6C9"
+    holidays = [
+        {"title": "Osterferien", "start": "2025-04-11", "end": "2025-04-26", "backgroundColor": zart_gruen, "display": "background"},
+        {"title": "Sommerferien", "start": "2025-07-28", "end": "2025-09-06", "backgroundColor": zart_gruen, "display": "background"},
+        {"title": "Herbstferien", "start": "2025-10-20", "end": "2025-10-31", "backgroundColor": zart_gruen, "display": "background"},
+        {"title": "Weihnachtsferien", "start": "2025-12-19", "end": "2026-01-06", "backgroundColor": zart_gruen, "display": "background"},
+        {"title": "Osterferien '26", "start": "2026-03-26", "end": "2026-04-11", "backgroundColor": zart_gruen, "display": "background"},
+        {"title": "Sommerferien '26", "start": "2026-07-13", "end": "2026-08-22", "backgroundColor": zart_gruen, "display": "background"},
+    ]
 
-# Main Tabs
-tab1, tab2, tab3 = st.tabs(["📚 MEINE SAMMLUNG", "📅 KALENDER", "🔄 SYNC"])
+    cal_ev = [{"id": str(d["id"]), "title": d["titel"], "start": d["start_date"],
+               "backgroundColor": d["color"], "allDay": True, "textColor": "white"} for d in k_data]
 
-with tab1:
-    search_col1, search_col2 = st.columns([3, 1])
-    with search_col1:
-        search = st.text_input("Suchen...", placeholder="Nummer oder Titel", label_visibility="collapsed")
-    with search_col2:
-        filter_mode = st.selectbox("Filter", ["Alle", "Im Besitz", "Fehlend"], label_visibility="collapsed")
-    
-    # Filter logic
-    filtered = [v for v in st.session_state.volumes if search.lower() in v['title'].lower() or search in str(v['nr'])]
-    
-    if filter_mode == "Im Besitz":
-        filtered = [v for v in filtered if v['nr'] in st.session_state.owned]
-    elif filter_mode == "Fehlend":
-        filtered = [v for v in filtered if v['nr'] not in st.session_state.owned]
+    state = calendar(
+        events=cal_ev + holidays,
+        options={
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
+            "buttonText": {"today": "Heute", "month": "Monat", "list": "Liste"},
+            "initialView": "dayGridMonth", "locale": "de", "firstDay": 1,
+            "weekends": False, "height": "auto", "selectable": True,
+            "timeZone": "UTC", "displayEventTime": False
+        },
+        key=st.session_state.cal_key
+    )
 
-    # Pagination
-    page_size = 24
-    total_pages = max((len(filtered) // page_size) + (1 if len(filtered) % page_size > 0 else 0), 1)
-    
-    page_col1, page_col2 = st.columns([1, 4])
-    with page_col1:
-        page = st.number_input("Seite", min_value=1, max_value=total_pages, step=1)
-    
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    
-    # Display Grid
-    st.markdown("---")
-    
-    # We use columns to create a grid-like feel
-    cols_per_row = 3
-    for i in range(0, len(filtered[start_idx:end_idx]), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j, vol in enumerate(filtered[start_idx:end_idx][i:i+cols_per_row]):
-            is_owned = vol['nr'] in st.session_state.owned
-            with cols[j]:
-                st.markdown(f"""
-                <div class="{'owned-row' if is_owned else 'missing-row'}">
-                    <span class="vol-nr">{vol['nr']}</span>
-                    <span class="vol-title">{vol['title']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                btn_label = "HABE ICH" if not is_owned else "ENTFERNEN"
-                btn_key = f"btn_{vol['nr']}"
-                
-                # Wrap button in a div to apply custom class for color
-                st.markdown(f'<div class="{"owned-btn" if is_owned else "missing-btn"}">', unsafe_allow_html=True)
-                if st.button(btn_label, key=btn_key):
-                    if is_owned:
-                        st.session_state.owned.remove(vol['nr'])
-                    else:
-                        st.session_state.owned.append(vol['nr'])
-                    save_collection(st.session_state.username, st.session_state.owned)
-                    st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+    if state.get("dateClick"):
+        nd = state["dateClick"]["date"][:10]
+        if st.session_state.selected_date != nd:
+            st.session_state.selected_date = nd; st.session_state.edit_id = None; st.rerun()
+    if state.get("eventClick"):
+        ni = state["eventClick"]["event"].get("id")
+        if st.session_state.edit_id != ni:
+            st.session_state.edit_id = ni; st.session_state.selected_date = None; st.rerun()
 
-with tab2:
-    st.header("Kommende Highlights")
-    upcoming = [v for v in st.session_state.volumes if v['is_upcoming']]
-    if upcoming:
-        for v in upcoming:
-            st.markdown(f"""
-            <div class="comic-card" style="border-color: #e11d48;">
-                <h3 style="color: #e11d48;">Band {v['nr']}: {v['title']}</h3>
-                <p style="font-size: 18px;">📅 <b>{v['release_date']}</b></p>
-            </div>
-            """, unsafe_allow_html=True)
+    if st.session_state.selected_date:
+        st.divider()
+        with st.form("q_f"):
+            st.write(f"**Neu am {datetime.strptime(st.session_state.selected_date, '%Y-%m-%d').strftime('%d.%m.%Y')}**")
+            qc = st.selectbox("Kind", list(CHILD_COLORS.keys()))
+            qs = st.selectbox("Fach", SUBJECTS)
+            qn = st.text_input("Notiz")
+            c1, c2 = st.columns(2)
+            if c1.form_submit_button("Speichern"):
+                supabase.table("klausuren").insert({
+                    "datum": datetime.strptime(st.session_state.selected_date, '%Y-%m-%d').strftime('%d.%m.%Y'),
+                    "titel": f"{qc}\n{qs}", "start_date": st.session_state.selected_date,
+                    "color": CHILD_COLORS[qc], "child": qc, "note": qn
+                }).execute()
+                st.session_state.selected_date = None; st.session_state.cal_key = str(uuid.uuid4()); st.rerun()
+            if c2.form_submit_button("Abbrechen"):
+                st.session_state.selected_date = None; st.rerun()
+
+    if st.session_state.edit_id and st.session_state.edit_id != "undefined":
+        st.divider()
+        try:
+            edit_row = k_df[k_df['id'].astype(str) == str(st.session_state.edit_id)].iloc[0]
+            with st.form("ed_f"):
+                st.write("**Bearbeiten**")
+                new_c = st.selectbox("Kind", list(CHILD_COLORS.keys()),
+                                     index=list(CHILD_COLORS.keys()).index(edit_row['child']))
+                curr_s = edit_row['titel'].split('\n')[-1]
+                new_s = st.selectbox("Fach", SUBJECTS, index=SUBJECTS.index(curr_s) if curr_s in SUBJECTS else 0)
+                new_d = st.date_input("Datum", datetime.strptime(edit_row['start_date'], '%Y-%m-%d'), format="DD.MM.YYYY")
+                new_n = st.text_input("Notiz", value=edit_row['note'])
+                c1, c2, c3 = st.columns([2, 2, 1])
+                if c1.form_submit_button("💾 Speichern"):
+                    supabase.table("klausuren").update({
+                        "datum": new_d.strftime('%d.%m.%Y'), "titel": f"{new_c}\n{new_s}",
+                        "start_date": str(new_d), "color": CHILD_COLORS[new_c], "child": new_c, "note": new_n
+                    }).eq("id", st.session_state.edit_id).execute()
+                    st.session_state.edit_id = None; st.session_state.cal_key = str(uuid.uuid4()); st.rerun()
+                if c2.form_submit_button("🗑️ Löschen"):
+                    supabase.table("klausuren").delete().eq("id", st.session_state.edit_id).execute()
+                    st.session_state.edit_id = None; st.session_state.cal_key = str(uuid.uuid4()); st.rerun()
+                if c3.form_submit_button("X"):
+                    st.session_state.edit_id = None; st.rerun()
+        except:
+            st.session_state.edit_id = None
+
+    st.divider()
+    if not k_df.empty:
+        df_t = k_df.copy()
+        df_t['Anzeige'] = df_t['titel'].str.replace('\n', ': ')
+        st.dataframe(
+            df_t.sort_values(by='start_date')[['datum', 'Anzeige']].rename(columns={'datum': 'Wann', 'Anzeige': 'Wer & Was'}),
+            hide_index=True, use_container_width=True
+        )
     else:
-        st.write("Momentan keine neuen Ankündigungen.")
+        st.info("Keine Einträge vorhanden.")
 
-with tab3:
-    st.markdown('<div class="comic-card">', unsafe_allow_html=True)
-    st.header("Daten-Abgleich")
-    st.write("Synchronisiere deine Liste mit den neuesten Veröffentlichungen aus Entenhausen.")
-    
-    if st.button("🔄 JETZT ABGLEICHEN"):
-        with st.spinner("Verbindung zum Archiv wird hergestellt..."):
-            # Fetch new
-            max_nr = max(v['nr'] for v in st.session_state.volumes)
-            new_vols = fetch_latest_volumes(max_nr)
-            if new_vols:
-                st.session_state.volumes.extend(new_vols)
-                st.success(f"{len(new_vols)} neue Bände gefunden!")
-            
-            # Fetch missing titles for 600+
-            missing = [v['nr'] for v in st.session_state.volumes if v['nr'] >= 600 and "LTB Band" in v['title']]
-            if missing:
-                updates = fetch_missing_titles(missing[:20])
-                for up in updates:
-                    for v in st.session_state.volumes:
-                        if v['nr'] == up['nr']:
-                            v['title'] = up['title']
-                st.success(f"{len(updates)} Titel aktualisiert!")
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+
+# =============================================================================
+# --- 3. STUNDENPLÄNE ---
+# =============================================================================
+elif st.session_state.view == 'stundenplan':
+    st.markdown('<p class="main-header">Stundenpläne</p>', unsafe_allow_html=True)
+
+    c_cols = st.columns(3)
+    for i, name in enumerate(CHILD_COLORS.keys()):
+        btn_type = "primary" if st.session_state.stundenplan_child == name else "secondary"
+        if c_cols[i].button(name, key=f"child_sel_{name}", use_container_width=True, type=btn_type):
+            st.session_state.stundenplan_child = name; st.session_state.editing_grade = False; st.rerun()
+
+    cur_c = st.session_state.stundenplan_child
+
+    try:
+        k_info = supabase.table("kinder_info").select("klasse").eq("child", cur_c).execute().data
+        cur_klasse = k_info[0]['klasse'] if k_info else "Klasse ?"
+    except:
+        cur_klasse = "Klasse ?"
+
+    if not st.session_state.editing_grade:
+        if st.button(f"✏️ {cur_klasse}", use_container_width=True):
+            st.session_state.editing_grade = True; st.rerun()
+    else:
+        with st.form("grade_form"):
+            new_g = st.text_input("Klasse anpassen:", value=cur_klasse)
+            if st.form_submit_button("Speichern"):
+                supabase.table("kinder_info").upsert({"child": cur_c, "klasse": new_g}).execute()
+                st.session_state.editing_grade = False; st.rerun()
+
+    res = supabase.table("stundenplaene").select("*").eq("child", cur_c).execute()
+    plan_dict = {(item['tag'], int(item['stunde'])): item for item in res.data}
+
+    for day in DAYS:
+        with st.expander(f"**{day}**", expanded=False):
+            for std in range(1, 8):
+                lesson = plan_dict.get((day, std))
+                fach = lesson['fach'] if lesson else "---"
+                col_t, col_f = st.columns([1, 4])
+                col_t.markdown(f"<small>{std}. Std<br>{TIMES[std]}</small>", unsafe_allow_html=True)
+                if col_f.button(f"{fach}", key=f"p_sc_{cur_c}_{day}_{std}", use_container_width=True):
+                    st.session_state.edit_cell = {"day": day, "std": std, "fach": fach, "id": lesson['id'] if lesson else None}
+
+    if 'edit_cell' in st.session_state:
+        ec = st.session_state.edit_cell
+        st.divider()
+        with st.form("ed_p"):
+            st.write(f"📌 **{ec['day']}, {ec['std']}. Stunde**")
+            new_f = st.selectbox("Fach", SUBJECTS, index=SUBJECTS.index(ec['fach']) if ec['fach'] in SUBJECTS else 0)
+            c1, c2 = st.columns(2)
+            if c1.form_submit_button("Speichern"):
+                if ec['id']:
+                    supabase.table("stundenplaene").update({"fach": new_f}).eq("id", ec['id']).execute()
+                else:
+                    supabase.table("stundenplaene").insert({"child": cur_c, "tag": ec['day'], "stunde": ec['std'], "fach": new_f}).execute()
+                del st.session_state.edit_cell; st.rerun()
+            if c2.form_submit_button("Abbrechen"):
+                del st.session_state.edit_cell; st.rerun()
+
+    if st.button("← Hauptmenü", use_container_width=True):
+        st.session_state.view = 'start'; st.rerun()
+
+
+# =============================================================================
+# --- 4. BUS-CHECK (Echtzeit-Fenster 120 Min., Haltestelle zuerst wählen) ---
+# =============================================================================
+elif st.session_state.view == 'bus':
+    st.markdown('<p class="main-header">Bus-Check</p>', unsafe_allow_html=True)
+
+    # -----------------------------------------------------------------------
+    # FAHRPLANDATEN  –  Quelle: VKP Fahrplan 2025, Mo–Fr
+    #
+    # Format: (Abfahrtszeit, Linie, Ausstieg/Endpunkt, Hinweis)
+    #
+    # SEEFISCHMARKT → Richtung Schönkirchen / Schönberg
+    #   200/201 Ausstieg: Linas Diek
+    #   210     Ausstieg: Amboßweg
+    #
+    # LINAS DIEK  → Kiel  (Linie 200, Ausstieg Seefischmarkt)
+    # AMBOßWEG    → Kiel  (Linie 210, Ausstieg Seefischmarkt)
+    # -----------------------------------------------------------------------
+
+    # (abfahrt, linie, ausstieg, hinweis)
+    SEEFISCHMARKT = [
+        ("06:37", "200", "Linas Diek",  ""),
+        ("06:52", "200", "Linas Diek",  ""),
+        ("07:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("07:07", "200", "Linas Diek",  ""),
+        ("07:20", "201", "Linas Diek",  "direkt, schneller"),
+        ("07:22", "200", "Linas Diek",  ""),
+        ("07:37", "200", "Linas Diek",  ""),
+        ("07:52", "200", "Linas Diek",  ""),
+        ("08:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("08:07", "200", "Linas Diek",  ""),
+        ("08:20", "201", "Linas Diek",  "direkt, schneller"),
+        ("08:22", "200", "Linas Diek",  ""),
+        ("08:37", "200", "Linas Diek",  ""),
+        ("08:52", "200", "Linas Diek",  ""),
+        ("09:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("09:22", "200", "Linas Diek",  ""),
+        ("09:52", "200", "Linas Diek",  ""),
+        ("10:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("10:22", "200", "Linas Diek",  ""),
+        ("10:52", "200", "Linas Diek",  ""),
+        ("11:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("11:22", "200", "Linas Diek",  ""),
+        ("11:37", "210", "Amboßweg",    ""),
+        ("11:52", "200", "Linas Diek",  ""),
+        ("12:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("12:22", "200", "Linas Diek",  ""),
+        ("12:37", "210", "Amboßweg",    ""),
+        ("12:52", "200", "Linas Diek",  ""),
+        ("13:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("13:22", "200", "Linas Diek",  ""),
+        ("13:37", "210", "Amboßweg",    ""),
+        ("13:52", "200", "Linas Diek",  ""),
+        ("14:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("14:08", "200", "Linas Diek",  ""),
+        ("14:22", "200", "Linas Diek",  ""),
+        ("14:37", "210", "Amboßweg",    ""),
+        ("14:52", "200", "Linas Diek",  ""),
+        ("15:05", "201", "Linas Diek",  "direkt, schneller"),
+        ("15:07", "200", "Linas Diek",  ""),
+        ("15:22", "200", "Linas Diek",  ""),
+        ("15:37", "210", "Amboßweg",    ""),
+        ("15:52", "200", "Linas Diek",  ""),
+        ("16:00", "200", "Linas Diek",  ""),
+    ]
+
+    # Quelle: VKP PDF 200i.pdf, Spalte "Schönkirchen, Lina's Diek", Richtung Kiel, Mo–Fr
+    # Linie 200: via Söhren/Grenzgraben (längere Route)
+    # Linie 201: direkt via Schönkirchener Str. (schneller, ~5 Min. früher am Seefischmarkt)
+    LINAS_DIEK = [
+        ("06:01", "200", "Seefischmarkt", ""),
+        ("06:15", "201", "Seefischmarkt", "direkt, schneller"),
+        ("06:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("06:38", "200", "Seefischmarkt", ""),
+        ("07:30", "201", "Seefischmarkt", "direkt, schneller"),
+        ("07:33", "200", "Seefischmarkt", ""),
+        ("08:06", "200", "Seefischmarkt", ""),
+        ("08:14", "201", "Seefischmarkt", "direkt, schneller"),
+        ("09:30", "200", "Seefischmarkt", ""),
+        ("09:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("10:30", "200", "Seefischmarkt", ""),
+        ("10:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("11:30", "200", "Seefischmarkt", ""),
+        ("11:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("12:30", "200", "Seefischmarkt", ""),
+        ("12:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("13:30", "200", "Seefischmarkt", ""),
+        ("13:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("14:30", "200", "Seefischmarkt", ""),
+        ("14:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("15:30", "200", "Seefischmarkt", ""),
+        ("15:31", "201", "Seefischmarkt", "direkt, schneller"),
+        ("15:37", "200", "Seefischmarkt", ""),
+        ("16:10", "201", "Seefischmarkt", "direkt, schneller"),
+        ("16:30", "201", "Seefischmarkt", "direkt, schneller"),
+        ("16:40", "200", "Seefischmarkt", ""),
+    ]
+
+    # Quelle: VKP PDF 210i.pdf, Spalte "Schönkirchen, Amboßweg", Richtung Kiel, Mo–Fr
+    AMBOSSWEG = [
+        ("06:07", "210", "Seefischmarkt", ""),
+        ("07:07", "210", "Seefischmarkt", ""),
+        ("08:17", "210", "Seefischmarkt", ""),
+        ("12:22", "210", "Seefischmarkt", ""),
+        ("14:22", "210", "Seefischmarkt", ""),
+    ]
+
+    # -----------------------------------------------------------------------
+    # DARSTELLUNG
+    # -----------------------------------------------------------------------
+
+    LINE_COLORS  = {"200": "#C62828", "201": "#1565C0", "210": "#2E7D32"}
+    LINE_BGLIGHT = {"200": "#FFEBEE", "201": "#E3F2FD", "210": "#E8F5E9"}
+
+    def bus_card(zeit_str, linie, ausstieg, hinweis, diff_min, ist_naechste):
+        farbe = LINE_COLORS.get(linie, "#555")
+        bg    = LINE_BGLIGHT.get(linie, "#fafafa") if ist_naechste else "white"
+        rand  = f"2px solid {farbe}" if ist_naechste else "1px solid #e8e8e8"
+
+        badge    = f'<span style="background:{farbe};color:white;font-size:0.7rem;padding:2px 8px;border-radius:10px;margin-left:8px;">▶ Nächste</span>' if ist_naechste else ""
+        if diff_min == 0:
+            cd = f'<span style="color:{farbe};font-weight:bold;font-size:0.85rem;">jetzt!</span>'
+        elif 0 < diff_min <= 120:
+            cd = f'<span style="color:{farbe};font-size:0.85rem;">in <b>{diff_min} Min.</b></span>'
+        else:
+            cd = ""
+        hw = f'<div style="font-size:0.75rem;color:#999;margin-top:2px;">ℹ️ {hinweis}</div>' if hinweis else ""
+
+        html = (
+            f'<div style="background:{bg};border:{rand};border-left:6px solid {farbe};border-radius:10px;padding:11px 14px 9px 14px;margin-bottom:9px;box-shadow:1px 2px 5px rgba(0,0,0,0.06);">' +
+            f'<div style="display:flex;align-items:center;justify-content:space-between;">' +
+            f'<div><span style="font-size:1.4rem;font-weight:900;color:{farbe};">{zeit_str}</span>' +
+            f'<span style="font-size:0.9rem;font-weight:700;background:{farbe};color:white;padding:2px 8px;border-radius:6px;margin-left:8px;">Linie {linie}</span>' +
+            f'{badge}</div><div>{cd}</div></div>' +
+            f'<div style="margin-top:5px;font-size:0.9rem;color:#444;">🚏 Ausstieg: <b>{ausstieg}</b></div>' +
+            f'{hw}</div>'
+        )
+        st.markdown(html, unsafe_allow_html=True)
+
+    def zeige_naechste_120min(fahrplan, haltestellenname, richtung):
+        from datetime import timedelta
+        now    = datetime.now(zoneinfo.ZoneInfo("Europe/Berlin")).replace(tzinfo=None)
+        cutoff = now.replace(second=0, microsecond=0)
+
+        # Wochentag-Namen für Ausgaben
+        WT = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+        # Nächsten Werktag berechnen
+        def naechster_werktag(von):
+            tage = 3 if von.weekday() == 4 else (2 if von.weekday() == 5 else 1)
+            t = von + timedelta(days=tage)
+            return t
+
+        if now.weekday() >= 5:
+            nwt = naechster_werktag(now)
+            st.warning(
+                f"⚠️ Dieser Fahrplan gilt nur Montag–Freitag. "
+                f"Nächste Fahrten ab **{WT[nwt.weekday()]}, {nwt.strftime('%d.%m.')}**."
+            )
+
+        treffer = []
+        for zeit_str, linie, ausstieg, hinweis in fahrplan:
+            h, m    = map(int, zeit_str.split(":"))
+            abfahrt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            diff    = int((abfahrt - cutoff).total_seconds() / 60)
+            if 0 <= diff <= 120:
+                treffer.append((zeit_str, linie, ausstieg, hinweis, diff))
+
+        st.caption(
+            f"📍 **{haltestellenname}** ➔ {richtung} &nbsp;|&nbsp; "
+            f"nächste 120 Min. ab {now.strftime('%H:%M')} Uhr &nbsp;|&nbsp; Mo–Fr &nbsp;|&nbsp; Quelle: VKP 2025"
+        )
+
+        if not treffer:
+            # Suche: noch heute später?
+            naechste_heute = None
+            for zeit_str, linie, ausstieg, hinweis in fahrplan:
+                h, m    = map(int, zeit_str.split(":"))
+                abfahrt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                diff    = int((abfahrt - cutoff).total_seconds() / 60)
+                if diff > 120:
+                    naechste_heute = (zeit_str, linie, ausstieg, hinweis)
+                    break
+
+            if naechste_heute:
+                z, li, au, hi = naechste_heute
+                hinweis_txt = f" · _{hi}_" if hi else ""
+                st.info(
+                    f"Keine Abfahrten in den nächsten 120 Minuten.\n\n"
+                    f"🕐 **Nächste Abfahrt heute:** {z} Uhr · Linie {li} · Ausstieg {au}{hinweis_txt}"
+                )
+            else:
+                # Kein Bus mehr heute → erste Fahrt nächsten Werktag
+                nwt = naechster_werktag(now)
+                ez, el, ea, eh = fahrplan[0]
+                hinweis_txt = f" · _{eh}_" if eh else ""
+                st.info(
+                    f"Heute keine weiteren Abfahrten mehr.\n\n"
+                    f"🕐 **Erste Fahrt {WT[nwt.weekday()]}, {nwt.strftime('%d.%m.')}:** "
+                    f"{ez} Uhr · Linie {el} · Ausstieg {ea}{hinweis_txt}"
+                )
+            return
+
+        for i, (zeit_str, linie, ausstieg, hinweis, diff_min) in enumerate(treffer):
+            ist_naechste = (i == 0)
+            bus_card(zeit_str, linie, ausstieg, hinweis, diff_min, ist_naechste)
+
+    # -----------------------------------------------------------------------
+    # HALTESTELLE WÄHLEN
+    # -----------------------------------------------------------------------
+    if 'bus_halt' not in st.session_state:
+        st.session_state.bus_halt = None
+
+    # Haltestellen-Buttons: gleiche Höhe via CSS, Zeilenumbruch via HTML
+    btn_labels = {
+        "seefisch": ("🏠", "Seefischmarkt", "→ Schönkirchen"),
+        "linas":    ("🏫", "Linas Diek",    "→ Seefischmarkt"),
+        "amboss":   ("🏫", "Amboßweg",      "→ Seefischmarkt"),
+    }
+    c1, c2, c3 = st.columns(3)
+    for col, key in zip([c1, c2, c3], ["seefisch", "linas", "amboss"]):
+        icon, zeile1, zeile2 = btn_labels[key]
+        aktiv = st.session_state.bus_halt == key
+        with col:
+            if st.button(
+                f"{icon} {zeile1} {zeile2}",
+                key=f"bus_btn_{key}",
+                use_container_width=True,
+                type="primary" if aktiv else "secondary"
+            ):
+                st.session_state.bus_halt = key; st.rerun()
+
+    st.divider()
+
+    if st.session_state.bus_halt == "seefisch":
+        zeige_naechste_120min(SEEFISCHMARKT, "Seefischmarkt", "Richtung Schönkirchen / Schönberg")
+    elif st.session_state.bus_halt == "linas":
+        zeige_naechste_120min(LINAS_DIEK, "Linas Diek", "Richtung Kiel")
+    elif st.session_state.bus_halt == "amboss":
+        zeige_naechste_120min(AMBOSSWEG, "Amboßweg", "Richtung Kiel")
+    else:
+        st.markdown(
+            "<div style='text-align:center;color:#aaa;padding:30px 0;font-size:1rem;'>"
+            "⬆️ Bitte Haltestelle auswählen</div>",
+            unsafe_allow_html=True
+        )
+
+    if st.button("← Hauptmenü", use_container_width=True):
+        st.session_state.bus_halt = None
+        st.session_state.view = 'start'; st.rerun()
+
+
+# =============================================================================
+# --- 5. FERIEN ---
+# =============================================================================
+elif st.session_state.view == 'ferien':
+    st.markdown('<p class="main-header">Ferien S-H</p>', unsafe_allow_html=True)
+    jahr = st.radio("Jahr:", [2026, 2027], horizontal=True)
+    st.dataframe(pd.DataFrame(FERIEN_DATA[jahr]), hide_index=True, use_container_width=True)
+    st.caption("Alle Angaben ohne Gewähr")
+    if st.button("← Hauptmenü", use_container_width=True):
+        st.session_state.view = 'start'; st.rerun()

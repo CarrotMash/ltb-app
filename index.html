@@ -258,6 +258,63 @@ function App(){
     showStatus('✅ API-Key gespeichert!');
   };
 
+  const printMissing=()=>{
+    const m=loadMeta();
+    const missing=vols.filter(v=>!v.upcoming&&!v.owned).sort((a,b)=>a.nr-b.nr);
+    const today=new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+    // Bände in Gruppen zu je 10 für übersichtliche Darstellung
+    const rows=[];
+    for(let i=0;i<missing.length;i+=10) rows.push(missing.slice(i,i+10));
+    const html=`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"/>
+<title>LTB Fehlende Bände – ${today}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Arial Narrow',Arial,sans-serif;padding:14mm 12mm;color:#000;background:#fff;}
+  h1{font-size:20pt;font-weight:900;letter-spacing:2px;margin-bottom:2mm;text-transform:uppercase;}
+  .sub{font-size:9pt;color:#444;margin-bottom:6mm;}
+  .stats{font-size:9pt;margin-bottom:6mm;padding:3mm 4mm;border:1.5px solid #000;display:inline-block;}
+  table{width:100%;border-collapse:collapse;margin-bottom:4mm;}
+  th{background:#000;color:#fff;font-size:8pt;font-weight:900;padding:2mm 3mm;text-align:left;letter-spacing:.5px;}
+  td{font-size:9pt;padding:1.5mm 3mm;border-bottom:1px solid #ddd;vertical-align:top;}
+  tr:nth-child(even) td{background:#f5f5f5;}
+  .nr{font-weight:900;width:14mm;white-space:nowrap;}
+  .title{color:#333;}
+  .notitle{color:#aaa;font-style:italic;}
+  .year{width:12mm;color:#777;text-align:right;}
+  .footer{font-size:7.5pt;color:#777;margin-top:4mm;border-top:1px solid #ccc;padding-top:3mm;}
+  .section-head{font-size:8pt;font-weight:900;color:#666;text-transform:uppercase;
+    letter-spacing:1px;padding:2mm 0 1mm;border-top:2px solid #000;margin-top:3mm;}
+  @media print{
+    body{padding:10mm 10mm;}
+    @page{margin:10mm;size:A4 portrait;}
+  }
+</style></head><body>
+<h1>🦆 LTB Sammler – Fehlende Bände</h1>
+<div class="sub">Stand: ${today} &nbsp;·&nbsp; Walt Disney Lustiges Taschenbuch Hauptreihe</div>
+<div class="stats">
+  <strong>${missing.length}</strong> fehlende Bände von <strong>${m.latestNr}</strong> erschienenen
+  &nbsp;|&nbsp; Vollständigkeit: <strong>${Math.round((m.latestNr-missing.length)/m.latestNr*100)}%</strong>
+</div>
+<table>
+  <thead><tr><th>Nr.</th><th>Titel</th><th>Jahr</th></tr></thead>
+  <tbody>
+    ${missing.map(v=>`<tr>
+      <td class="nr">LTB ${v.nr}</td>
+      <td class="title">${v.title?v.title:'<span class="notitle">–</span>'}</td>
+      <td class="year">${v.year}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>
+<div class="footer">Erstellt mit LTB Sammler &nbsp;·&nbsp; carrotmash.github.io/ltb-app &nbsp;·&nbsp; ${today}</div>
+</body></html>`;
+    const w=window.open('','_blank','width=800,height=900');
+    if(!w){showStatus('⚠️ Popup blockiert – bitte Popups für diese Seite erlauben.',5000);return;}
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
   const autoPromote=(volList, curMeta)=>{
     // Prüft still ob upcoming-Bände inzwischen erschienen sind (Datum <= heute)
     const today = new Date();
@@ -685,6 +742,15 @@ function App(){
             onClick:()=>{
               setShareText('');setShareMode('import');setShareOpen(true);setSettingsOpen(false);
             }},'📥 Sammlung empfangen')
+        ),
+        E('div',{style:{border:'2px solid #1A1A2E',padding:'12px',background:'#fff'}},
+          E('div',{style:{fontSize:10,fontWeight:900,color:'#888',textTransform:'uppercase',marginBottom:8}},'🖨️ Drucken'),
+          E('p',{style:{fontSize:12,color:'#555',lineHeight:1.5,marginBottom:10}},
+            'Fehlende Bände als übersichtliche Liste ausdrucken – ideal für den Flohmarkt.'),
+          E('button',{className:'btn',style:{width:'100%',fontSize:14,padding:'10px',
+            background:'#FF8C00',color:'#fff',border:'3px solid #1A1A2E'},
+            onClick:()=>{printMissing();setSettingsOpen(false);}},
+            '🖨️ Fehlende Bände drucken')
         )
       )
     )

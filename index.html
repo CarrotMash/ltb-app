@@ -65,11 +65,21 @@ const LTB_DATA = {1:{t:"Der Kolumbusfalter",tf:"Der Kolumbusfalter und andere Ab
 /* ── prompts stored as variables to avoid quoting issues ── */
 function buildPromptNew() {
   const m=loadMeta();
+  // Bände ohne Titel (in LTB_DATA oder extraData)
+  const untitled=[];
+  for(let i=m.latestNr;i<=Object.keys(LTB_DATA).length+8;i++){
+    const d=LTB_DATA[i]||m.extraData[i];
+    if(d&&!d.t) untitled.push(i);
+  }
+  const untitledPart=untitled.length>0
+    ? ' Ausserdem: Wie lauten die offiziellen Titel der LTB Hauptreihe Baende ' + untitled.join(',') + '? Falls bekannt, ergaenze sie im selben Array.'
+    : '';
   return [
     'Gibt es Lustiges Taschenbuch LTB Hauptreihe Baende mit Nummer groesser als ' + m.latestNr,
     'die erschienen oder offiziell angekuendigt wurden (keine Sonderreihen)?',
+    untitledPart,
     'Antworte NUR mit JSON-Array ohne Markdown:',
-    '[{"nr":' + (m.latestNr+1) + ',"title":"Titel","date":"YYYY-MM-DD"},...] oder []'
+    '[{"nr":' + (m.latestNr+1) + ',"title":"Titel oder null","date":"YYYY-MM-DD oder null"},...] oder []'
   ].join(' ');
 }
 
@@ -185,8 +195,6 @@ function App(){
   const[ready,setReady]     = useState(false);
   const[filter,setFilter]   = useState('all');
   const[search,setSearch]   = useState('');
-  const[yearFrom,setYF]     = useState(1967);
-  const[yearTo,setYT]       = useState(2026);
   const[sel,setSel]         = useState(null);
   const[detail,setDetail]   = useState(null);
   const[detLoad,setDetLoad] = useState(false);
@@ -376,27 +384,32 @@ function App(){
 
   const adoptNewBands=(found)=>{
     const cur=loadMeta();
-    // Sortieren nach Nummer
     const sorted=[...found].sort((a,b)=>a.nr-b.nr);
-    // Neueste erschienene Bände bestimmen
     const today=new Date();
+    // Neue Bände (höher als aktuell bekannte Grenze)
+    const maxKnown=Math.max(618,...Object.keys(cur.extraData).map(Number).filter(n=>n>0));
+    const brandNew=sorted.filter(v=>v.nr>maxKnown&&!LTB_DATA[v.nr]);
+    // Titel-Updates für bereits bekannte titellose Bände
+    const titleUpdates=sorted.filter(v=>v.title&&(LTB_DATA[v.nr]||cur.extraData[v.nr])&&
+      !(LTB_DATA[v.nr]&&LTB_DATA[v.nr].t)&&!( cur.extraData[v.nr]&&cur.extraData[v.nr].t));
     const released=sorted.filter(v=>v.date&&new Date(v.date)<=today);
     const upcoming=sorted.filter(v=>!v.date||new Date(v.date)>today);
     // extraData erweitern
     const extra={...cur.extraData};
-    sorted.forEach(v=>{extra[v.nr]={t:v.title||null,d:v.date||null};});
-    // latestNr = höchste bereits erschienene Nummer
+    brandNew.forEach(v=>{extra[v.nr]={t:v.title||null,d:v.date||null};});
+    titleUpdates.forEach(v=>{
+      const existing=extra[v.nr]||{};
+      extra[v.nr]={...existing,t:v.title};
+    });
     const newLatest=released.length>0
       ? Math.max(cur.latestNr,...released.map(v=>v.nr))
       : cur.latestNr;
-    // nextNr und nextDate = nächster upcoming Band
     const nextBand=upcoming.length>0?upcoming[0]:null;
     const newNextNr=nextBand?nextBand.nr:cur.nextNr;
     const newNextDate=nextBand&&nextBand.date?new Date(nextBand.date):cur.nextDate;
     const newMeta={latestNr:newLatest,nextNr:newNextNr,nextDate:newNextDate,extraData:extra};
     saveMeta(newMeta);
     setMeta(newMeta);
-    // Volumes neu aufbauen mit Besitz-Stand
     const base=buildVols(newMeta);
     try{
       const raw=localStorage.getItem(STORE_KEY);
@@ -404,7 +417,11 @@ function App(){
     }catch(e){}
     setVols(base);
     setNewFound([]);
-    showStatus('✅ '+sorted.length+' Bände übernommen!',4000);
+    // Meldung differenzieren
+    const parts=[];
+    if(brandNew.length>0) parts.push(brandNew.length+' neue Bände');
+    if(titleUpdates.length>0) parts.push(titleUpdates.length+' Titel ergänzt');
+    showStatus('✅ '+(parts.join(', ')||'Alles aktuell')+'!',4000);
   };
 
   const loadDetail=async(vol)=>{
@@ -439,7 +456,6 @@ function App(){
     if(filter==='owned'   &&!v.owned)              return false;
     if(filter==='missing' &&(v.owned||v.upcoming)) return false;
     if(filter==='upcoming'&&!v.upcoming)           return false;
-    if(v.year<yearFrom||v.year>yearTo)             return false;
     if(search.trim()){
       const q=search.toLowerCase();
       if(!String(v.nr).includes(q)&&
@@ -464,45 +480,52 @@ function App(){
   return E(React.Fragment,null,
 
   /* ── HEADER ─────────────────────────────────────── */
-  E('header',{style:{background:'#E8152A',borderBottom:'4px solid #1A1A2E',padding:'0 14px',
+  E('header',{style:{background:'#E8152A',borderBottom:'4px solid #1A1A2E',padding:'8px 12px',
     backgroundImage:'radial-gradient(rgba(0,0,0,.12) 1px,transparent 1px)',backgroundSize:'8px 8px'}},
-    E('div',{style:{maxWidth:1300,margin:'0 auto'}},
-      E('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',
-        flexWrap:'wrap',gap:10,paddingTop:12}},
-        E('div',null,
-          E('div',{style:{fontFamily:'Bangers,Impact,cursive',
-            fontSize:'clamp(32px,6vw,58px)',color:'#FFD700',lineHeight:1,letterSpacing:4,
-            textShadow:'-3px 3px 0 #1A1A2E,3px 3px 0 #1A1A2E,-3px -3px 0 #1A1A2E,3px -3px 0 #1A1A2E'}},
-            'LTB SAMMLER'),
-          E('div',{style:{color:'#fff',fontWeight:900,fontSize:10,letterSpacing:1,
-            textShadow:'1px 1px 0 #1A1A2E',marginTop:2}},
-            "Walt Disney's Lustige Taschenbücher · Sammlungsverwaltung")
-        ),
-        E('div',{style:{background:'#FFD700',border:'3px solid #1A1A2E',padding:'8px 12px',
-          boxShadow:'5px 5px 0 #1A1A2E',textAlign:'center',minWidth:160}},
-          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:10,letterSpacing:2,color:'#888'}},'NÄCHSTER BAND'),
-          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:22,color:'#E8152A',letterSpacing:2,lineHeight:1}},'LTB ',meta.nextNr),
-          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:12,color:'#444',marginTop:1}},
-            (LTB_DATA[meta.nextNr]&&LTB_DATA[meta.nextNr].t)||(meta.extraData[meta.nextNr]&&meta.extraData[meta.nextNr].t)||''),
-          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:20,color:'#1A1A2E',letterSpacing:1}},countdown),
-          E('div',{style:{fontSize:9,fontWeight:900,color:'#666',marginTop:1}},meta.nextDate.toLocaleDateString('de-DE',{day:'2-digit',month:'long',year:'numeric'}))
+    E('div',{style:{maxWidth:1300,margin:'0 auto',display:'flex',flexDirection:'column',gap:7}},
+
+      /* Zeile 1: Titel + Countdown-Box */
+      E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}},
+        E('div',{style:{fontFamily:'Bangers,Impact,cursive',
+          fontSize:'clamp(26px,7vw,48px)',color:'#FFD700',lineHeight:1,letterSpacing:3,
+          textShadow:'-2px 2px 0 #1A1A2E,2px 2px 0 #1A1A2E,-2px -2px 0 #1A1A2E,2px -2px 0 #1A1A2E'}},
+          '🦆 LTB SAMMLER'),
+        E('div',{style:{background:'#FFD700',border:'2px solid #1A1A2E',padding:'4px 10px',
+          boxShadow:'3px 3px 0 #1A1A2E',textAlign:'center',flexShrink:0}},
+          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:9,letterSpacing:1,color:'#888',lineHeight:1}},'NÄCHSTER BAND'),
+          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:15,color:'#E8152A',letterSpacing:1,lineHeight:1.1}},
+            'LTB ',meta.nextNr,' · ',
+            (LTB_DATA[meta.nextNr]&&LTB_DATA[meta.nextNr].t)||(meta.extraData[meta.nextNr]&&meta.extraData[meta.nextNr].t)||'?'),
+          E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:13,color:'#1A1A2E',letterSpacing:1,lineHeight:1.1}},countdown),
+          E('div',{style:{fontSize:8,fontWeight:900,color:'#666'}},meta.nextDate.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}))
         )
       ),
-      E('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',paddingBottom:10,paddingTop:8}},
-        ...[['Gesamt',released.length,'#0066CC'],['✓ Besitz',owned.length,'#00AA44'],
-            ['✗ Fehlen',missing.length,'#E8152A'],['Stand',pct+'%','#FF8C00']].map(([l,v,c])=>
-          E('div',{key:l,style:{background:'#fff',border:'3px solid #1A1A2E',
-            padding:'3px 9px',boxShadow:'3px 3px 0 #1A1A2E',textAlign:'center',minWidth:70}},
-            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:20,color:c,lineHeight:1}},v),
-            E('div',{style:{fontSize:8,fontWeight:900,color:'#555'}},l)
+
+      /* Zeile 2: Statistik-Chips + Fortschrittsbalken */
+      E('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'nowrap'}},
+        ...[['Gesamt',released.length,'#0066CC'],['✓',owned.length,'#00AA44'],
+            ['✗',missing.length,'#E8152A'],[pct+'%',null,'#FF8C00']].map(([l,v,col],i)=>
+          E('div',{key:i,style:{background:'#fff',border:'2px solid #1A1A2E',
+            padding:'2px 7px',boxShadow:'2px 2px 0 #1A1A2E',textAlign:'center',flexShrink:0}},
+            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:16,color:col,lineHeight:1}},
+              v!==null?v+' '+l:l),
+            v!==null&&E('div',{style:{fontSize:7,fontWeight:900,color:'#666',lineHeight:1}},
+              i===0?'Bände':i===1?'Besitz':'Fehlen')
           )
         ),
-        E('div',{style:{flex:1,minWidth:140,display:'flex',alignItems:'center',gap:6}},
-          E('div',{className:'pt'},E('div',{className:'pf',style:{width:pct+'%'}}))
-        ),
-        E('button',{className:'btn dk',style:{fontSize:13,padding:'7px 12px'},onClick:()=>setBulk(true)},'⚡ Bulk'),
-        E('button',{className:'btn',style:{fontSize:13,padding:'7px 12px'},onClick:()=>checkNew()},'🔄 Neu?'),
-        E('button',{className:'btn dk',style:{fontSize:15,padding:'7px 12px'},onClick:()=>setSettingsOpen(true)},'⚙️')
+        E('div',{style:{flex:1,display:'flex',alignItems:'center',minWidth:0}},
+          E('div',{className:'pt',style:{flex:1}},E('div',{className:'pf',style:{width:pct+'%'}}))
+        )
+      ),
+
+      /* Zeile 3: Aktions-Buttons alle in einer Zeile */
+      E('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+        E('button',{className:'btn dk',style:{fontSize:12,padding:'6px 10px',flex:1},
+          onClick:()=>setBulk(true)},'⚡ Bulk'),
+        E('button',{className:'btn',style:{fontSize:12,padding:'6px 10px',flex:1},
+          onClick:()=>checkNew()},'🔄 Neu?'),
+        E('button',{className:'btn dk',style:{fontSize:14,padding:'6px 12px'},
+          onClick:()=>setSettingsOpen(true)},'⚙️')
       )
     )
   ),
@@ -525,26 +548,28 @@ function App(){
   ),
 
   /* ── FILTER BAR ─────────────────────────────────── */
-  E('div',{style:{background:'#FFF8E7',borderBottom:'3px solid #1A1A2E',padding:'8px 14px',
-    position:'sticky',top:0,zIndex:50,boxShadow:'0 4px 0 rgba(0,0,0,.1)'}},
-    E('div',{style:{maxWidth:1300,margin:'0 auto',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
-      E('div',{style:{position:'relative',flex:'1 1 160px',maxWidth:230}},
+  E('div',{style:{background:'#FFF8E7',borderBottom:'3px solid #1A1A2E',padding:'7px 12px',
+    position:'sticky',top:0,zIndex:50,boxShadow:'0 3px 0 rgba(0,0,0,.1)'}},
+    E('div',{style:{maxWidth:1300,margin:'0 auto',display:'flex',flexDirection:'column',gap:6}},
+      /* Suchfeld */
+      E('div',{style:{position:'relative'}},
         E('span',{style:{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',
           fontSize:13,pointerEvents:'none'}},'🔍'),
-        E('input',{type:'search',placeholder:'Nr. oder Titel…',value:search,
-          onChange:e=>setSearch(e.target.value),style:{paddingLeft:28,width:'100%'}})
+        E('input',{type:'search',placeholder:'Nr. oder Titel suchen…',value:search,
+          onChange:e=>setSearch(e.target.value),
+          style:{paddingLeft:30,width:'100%',fontSize:16}})
       ),
-      ...[['all','Alle'],['owned','✓ Besitz'],['missing','✗ Fehlen'],['upcoming','Kommend']].map(([v,l])=>
-        E('button',{key:v,className:'btn'+(filter===v?' on':''),style:{fontSize:13,padding:'7px 12px'},onClick:()=>setFilter(v)},l)
-      ),
-      E('div',{style:{display:'flex',alignItems:'center',gap:6,flex:'1 1 180px'}},
-        E('span',{style:{fontSize:10,fontWeight:900,color:'#888',whiteSpace:'nowrap'}},yearFrom+'–'+yearTo),
-        E('input',{type:'range',min:1967,max:2026,value:yearFrom,
-          onChange:e=>setYF(Math.min(+e.target.value,yearTo))}),
-        E('input',{type:'range',min:1967,max:2026,value:yearTo,
-          onChange:e=>setYT(Math.max(+e.target.value,yearFrom))})
-      ),
-      E('span',{style:{fontSize:11,fontWeight:900,color:'#E8152A',whiteSpace:'nowrap'}},filtered.length+' Bde.')
+      /* Filter-Buttons + Zähler in einer scrollbaren Zeile */
+      E('div',{style:{display:'flex',gap:6,alignItems:'center',overflowX:'auto',
+        WebkitOverflowScrolling:'touch',scrollbarWidth:'none',paddingBottom:2}},
+        ...[['all','Alle'],['owned','✓ Besitz'],['missing','✗ Fehlen'],['upcoming','Kommend']].map(([v,l])=>
+          E('button',{key:v,className:'btn'+(filter===v?' on':''),
+            style:{fontSize:13,padding:'7px 14px',flexShrink:0},
+            onClick:()=>setFilter(v)},l)
+        ),
+        E('span',{style:{fontSize:12,fontWeight:900,color:'#E8152A',whiteSpace:'nowrap',
+          marginLeft:'auto',flexShrink:0,paddingLeft:6}},filtered.length+' Bde.')
+      )
     )
   ),
 
@@ -554,7 +579,7 @@ function App(){
       ? E('div',{style:{textAlign:'center',padding:'70px 20px'}},
           E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:30,color:'#ccc',letterSpacing:3}},
             'KEINE BÄNDE GEFUNDEN'))
-      : E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(85px,1fr))',gap:8}},
+      : E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(68px,1fr))',gap:8}},
           ...filtered.map(vol=>
             E('div',{key:vol.nr,
               className:'card'+(vol.owned?' own':'')+(vol.upcoming?' up':''),

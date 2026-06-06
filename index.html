@@ -86,9 +86,10 @@ function buildPromptNew() {
 function detailPrompt(nr, title) {
   const t = title ? ('"' + title + '"') : ('Band ' + nr);
   return [
-    'Suche die vollstaendige Geschichtenliste (Kapiteluebersicht) von Walt Disney Lustiges Taschenbuch LTB Nr.' + nr + ' ' + t + ' (Egmont Ehapa, Deutschland).',
-    'Antworte NUR mit diesem JSON ohne Markdown, keine Erklaerungen:',
-    '{"geschichten":[{"titel":"Titel der Geschichte","figuren":"Donald Duck, Dagobert Duck"}],"besonderheit":"besondere Eigenschaft des Bandes oder null"}'
+    'Suche die Geschichtenliste von Walt Disney Lustiges Taschenbuch LTB Nr.' + nr + ' ' + t + ' (Egmont Ehapa).',
+    'Quellen: egmont-shop.de, lustiges-taschenbuch.de, duckipedia.org oder comicforum.de.',
+    'Antworte AUSSCHLIESSLICH mit raw JSON (kein Markdown, keine Backticks, keine Erklaerung):',
+    '{"geschichten":[{"titel":"Geschichtstitel","figuren":"Figur1, Figur2"}],"besonderheit":null}'
   ].join(' ');
 }
 
@@ -434,15 +435,26 @@ function App(){
         headers:{'Content-Type':'application/json','x-api-key':key,
           'anthropic-version':'2023-06-01',
           'anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,
           tools:[{type:'web_search_20250305',name:'web_search'}],
           messages:[{role:'user',content:detailPrompt(vol.nr,vol.title)}]})
       });
       const d=await r.json();
       const txt=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-      const s=txt.indexOf('{'),e=txt.lastIndexOf('}');
-      if(s!==-1&&e!==-1)setDetail(JSON.parse(txt.slice(s,e+1)));
-      else setDetail({error:true});
+      // Versuche JSON zu extrahieren – robust gegen Markdown-Fences und Whitespace
+      const cleaned=txt.replace(/```json|```/g,'').trim();
+      const s=cleaned.indexOf('{'),e=cleaned.lastIndexOf('}');
+      if(s!==-1&&e!==-1){
+        try{
+          const parsed=JSON.parse(cleaned.slice(s,e+1));
+          // Normalisierung: alter und neuer Format-Support
+          if(!parsed.geschichten&&parsed.inhalt){
+            // Fallback: altes Format umwandeln
+            parsed.geschichten=[{titel:parsed.inhalt,figuren:(parsed.hauptfiguren||[]).join(', ')}];
+          }
+          setDetail(parsed.geschichten||parsed.inhalt?parsed:{error:true});
+        }catch(pe){setDetail({error:true,msg:pe.message});}
+      } else setDetail({error:true});
     }catch(e){setDetail({error:true});}
     setDetLoad(false);
   };

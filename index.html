@@ -86,9 +86,9 @@ function buildPromptNew() {
 function detailPrompt(nr, title) {
   const t = title ? ('"' + title + '"') : ('Band ' + nr);
   return [
-    'Suche Infos zu Walt Disney Lustiges Taschenbuch LTB Nr.' + nr + ' ' + t + ' (Egmont Ehapa).',
-    'Antworte NUR mit diesem JSON ohne Markdown:',
-    '{"inhalt":"1-2 Saetze zum Inhalt","hauptfiguren":["Figur1","Figur2"],"besonderheit":"besondere Eigenschaft oder null"}'
+    'Suche die vollstaendige Geschichtenliste (Kapiteluebersicht) von Walt Disney Lustiges Taschenbuch LTB Nr.' + nr + ' ' + t + ' (Egmont Ehapa, Deutschland).',
+    'Antworte NUR mit diesem JSON ohne Markdown, keine Erklaerungen:',
+    '{"geschichten":[{"titel":"Titel der Geschichte","figuren":"Donald Duck, Dagobert Duck"}],"besonderheit":"besondere Eigenschaft des Bandes oder null"}'
   ].join(' ');
 }
 
@@ -615,12 +615,11 @@ function App(){
         backgroundImage:'radial-gradient(rgba(0,0,0,.1) 1px,transparent 1px)',backgroundSize:'6px 6px'}},
         E('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}},
           E('div',{style:{flex:1,minWidth:0}},
-            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:32,color:'#FFD700',
-              textShadow:'-2px 2px 0 #1A1A2E',letterSpacing:3,lineHeight:1}},'LTB ',sel.nr),
-            E('div',{style:{color:'#fff',fontWeight:900,fontSize:14,marginTop:3,wordBreak:'break-word'}},sel.title||'–'),
-            sel.titleFirst&&sel.titleFirst!==sel.title&&
-              E('div',{style:{color:'rgba(255,255,255,.7)',fontSize:11,marginTop:2}},
-                'Erstauflage: ',E('em',null,sel.titleFirst))
+            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:13,color:'rgba(255,255,255,0.7)',
+              letterSpacing:2,lineHeight:1}},'LTB ',sel.nr),
+            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:26,color:'#FFD700',
+              textShadow:'-2px 2px 0 #1A1A2E',letterSpacing:2,lineHeight:1.1,wordBreak:'break-word'}},
+              sel.title||('Band '+sel.nr))
           ),
           E('button',{onClick:()=>{setSel(null);setDetail(null);},
             style:{background:'#1A1A2E',color:'#FFD700',border:'2px solid #FFD700',
@@ -630,16 +629,21 @@ function App(){
       ),
       E('div',{style:{padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}},
         E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
-          ...[['Erschienen',fmtDate(sel.date)],['Jahr',String(sel.year)],
+          ...[['Erschienen',fmtDate(sel.date)],
               ['Status',sel.upcoming?'📅 Kommend':sel.owned?'✓ Im Besitz':'✗ Fehlt',
-               sel.upcoming?'#FF8C00':sel.owned?'#00AA44':'#E8152A'],
-              ['Band-Nr.','Nr. '+sel.nr]].map(([l,v,c])=>
+               sel.upcoming?'#FF8C00':sel.owned?'#00AA44':'#E8152A']
+             ].map(([l,v,cv])=>
             E('div',{key:l,className:'icell'},
               E('div',{className:'lbl'},l),
-              E('div',{className:'val',style:c?{color:c}:{}},v)
+              E('div',{className:'val',style:cv?{color:cv}:{}},v)
             )
           )
         ),
+        sel.titleFirst&&sel.titleFirst!==sel.title&&
+          E('div',{className:'icell'},
+            E('div',{className:'lbl'},'Erstauflage-Titel'),
+            E('div',{className:'val',style:{fontSize:12}},sel.titleFirst)
+          ),
         detLoad&&E('div',{style:{textAlign:'center',padding:'22px 0'}},
           E('div',{className:'bop',style:{fontSize:34}},'🦆'),
           E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:15,color:'#E8152A',
@@ -655,17 +659,25 @@ function App(){
             '⚙️ Einstellungen öffnen')
         ),
         detail&&!detail.error&&!detail.noKey&&E(React.Fragment,null,
-          detail.inhalt&&E('div',{style:{border:'2px solid #1A1A2E',padding:'10px 12px',background:'#fff'}},
-            E('div',{style:{fontSize:9,fontWeight:900,color:'#888',textTransform:'uppercase',marginBottom:4}},'🦆 Inhalt'),
-            E('p',{style:{fontSize:13,lineHeight:1.65,color:'#333'}},detail.inhalt)
-          ),
-          detail.hauptfiguren&&detail.hauptfiguren.length>0&&E('div',null,
-            E('div',{style:{fontSize:9,fontWeight:900,color:'#888',textTransform:'uppercase',marginBottom:5}},'🌟 Hauptfiguren'),
-            E('div',{style:{display:'flex',flexWrap:'wrap',gap:4}},
-              ...detail.hauptfiguren.map(f=>E('span',{key:f,className:'chip'},f))
+          detail.geschichten&&detail.geschichten.length>0&&E('div',null,
+            E('div',{style:{fontSize:9,fontWeight:900,color:'#888',textTransform:'uppercase',marginBottom:6}},
+              '📖 Geschichten ('+detail.geschichten.length+')'),
+            E('div',{style:{display:'flex',flexDirection:'column',gap:4}},
+              ...detail.geschichten.map((g,i)=>
+                E('div',{key:i,style:{display:'flex',gap:8,alignItems:'flex-start',
+                  background:i%2===0?'#fff':'#f5f0e8',
+                  border:'2px solid #1A1A2E',padding:'6px 10px'}},
+                  E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:13,color:'#E8152A',
+                    minWidth:18,flexShrink:0,lineHeight:1.3}},i+1+'.'),
+                  E('div',{style:{flex:1,minWidth:0}},
+                    E('div',{style:{fontWeight:900,fontSize:13,lineHeight:1.3,color:'#1A1A2E'}},g.titel),
+                    g.figuren&&E('div',{style:{fontSize:11,color:'#666',marginTop:2}},g.figuren)
+                  )
+                )
+              )
             )
           ),
-          detail.besonderheit&&detail.besonderheit!=='null'&&
+          detail.besonderheit&&detail.besonderheit!=='null'&&detail.besonderheit!==null&&
             E('div',{style:{background:'#0066CC',border:'2px solid #1A1A2E',padding:'10px 12px'}},
               E('div',{style:{fontSize:9,fontWeight:900,color:'rgba(255,255,255,.7)',
                 textTransform:'uppercase',marginBottom:4}},'⭐ Besonderheit'),

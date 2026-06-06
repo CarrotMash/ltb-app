@@ -214,7 +214,7 @@ function App(){
     setApiKeyInput(k);
     setVols(base);
     setReady(true);
-    if(k) checkNew(k,m);
+    autoPromote(base, m);
   },[]);
 
   useEffect(()=>{
@@ -256,6 +256,35 @@ function App(){
     localStorage.setItem(KEY_STORE,apiKeyInput);
     setSettingsOpen(false);
     showStatus('✅ API-Key gespeichert!');
+  };
+
+  const autoPromote=(volList, curMeta)=>{
+    // Prüft still ob upcoming-Bände inzwischen erschienen sind (Datum <= heute)
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const promoted = volList.filter(v =>
+      v.upcoming && v.date && new Date(v.date) <= today
+    );
+    if(promoted.length === 0) return;
+    // Meta aktualisieren
+    const newLatest = Math.max(curMeta.latestNr, ...promoted.map(v=>v.nr));
+    // Nächster upcoming-Band nach dem neuen latestNr
+    const nextUpcoming = volList
+      .filter(v => v.nr > newLatest && v.date)
+      .sort((a,b) => a.nr - b.nr)[0];
+    const newMeta = {
+      ...curMeta,
+      latestNr: newLatest,
+      nextNr:   nextUpcoming ? nextUpcoming.nr  : curMeta.nextNr,
+      nextDate: nextUpcoming ? new Date(nextUpcoming.date) : curMeta.nextDate,
+    };
+    saveMeta(newMeta);
+    setMeta(newMeta);
+    // Volumes still aktualisieren
+    setVols(prev => prev.map(v => ({
+      ...v,
+      upcoming: v.nr > newLatest
+    })));
   };
 
   const checkNew=async(keyOverride,metaOverride)=>{

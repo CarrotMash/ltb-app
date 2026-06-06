@@ -125,14 +125,29 @@ function saveMeta(obj){
 }
 
 const PAL = [
-  ['#E8152A','#FFD700','#1A1A2E'],
-  ['#0066CC','#FFD700','#E8152A'],
-  ['#CC5500','#FFD700','#1A1A2E'],
-  ['#FF8C00','#1A1A2E','#FFD700'],
-  ['#006633','#FFD700','#E8152A'],
-  ['#8B0000','#FFD700','#0066CC'],
-  ['#1A1A2E','#FF8C00','#FFD700'],
+  ['#E8152A','#FFD700','#1A1A2E'],  // 1967–1974
+  ['#0066CC','#FFD700','#E8152A'],  // 1975–1981
+  ['#8B0000','#FFD700','#0066CC'],  // 1982–1988
+  ['#006633','#FFD700','#E8152A'],  // 1989–1995
+  ['#CC5500','#FFD700','#1A1A2E'],  // 1996–2002
+  ['#1A1A2E','#FF8C00','#FFD700'],  // 2003–2009
+  ['#4B0082','#FFD700','#E8152A'],  // 2010–2016
+  ['#006666','#FFD700','#1A1A2E'],  // 2017–2023
+  ['#E8152A','#00CCFF','#1A1A2E'],  // 2024–
 ];
+
+// Jahrgangs-Farbzuordnung
+function palForYear(year) {
+  if(year<=1974) return PAL[0];
+  if(year<=1981) return PAL[1];
+  if(year<=1988) return PAL[2];
+  if(year<=1995) return PAL[3];
+  if(year<=2002) return PAL[4];
+  if(year<=2009) return PAL[5];
+  if(year<=2016) return PAL[6];
+  if(year<=2023) return PAL[7];
+  return PAL[8];
+}
 
 function fmtDate(iso){
   if(!iso) return '–';
@@ -155,10 +170,8 @@ function buildVols(meta){
   return v;
 }
 
-function Cover({nr,owned,upcoming}){
-  const[bg,acc,dk]=PAL[Math.floor((nr-1)/85)%PAL.length];
-  const info=LTB_DATA[nr];
-  const sub=info&&info.t?(info.t.length>16?info.t.slice(0,15)+'…':info.t):null;
+function Cover({nr,owned,upcoming,year}){
+  const[bg,acc,dk]=palForYear(year||new Date().getFullYear());
   return React.createElement('svg',{viewBox:'0 0 80 110',xmlns:'http://www.w3.org/2000/svg',
     style:{width:'100%',height:'100%',display:'block'}},
     React.createElement('rect',{width:80,height:110,fill:bg}),
@@ -166,12 +179,9 @@ function Cover({nr,owned,upcoming}){
     React.createElement('rect',{x:0,y:0,width:80,height:24,fill:'none',stroke:dk,strokeWidth:1.5}),
     React.createElement('text',{x:40,y:17,textAnchor:'middle',
       fontFamily:'Bangers,Impact,cursive',fontSize:14,fill:dk,letterSpacing:3},'LTB'),
-    React.createElement('text',{x:40,y:64,textAnchor:'middle',
-      fontFamily:'Bangers,Impact,cursive',fontSize:28,
+    React.createElement('text',{x:40,y:72,textAnchor:'middle',
+      fontFamily:'Bangers,Impact,cursive',fontSize:30,
       fill:'white',stroke:dk,strokeWidth:2,paintOrder:'stroke'},nr),
-    sub&&React.createElement('text',{x:40,y:78,textAnchor:'middle',
-      fontFamily:'Nunito,sans-serif',fontSize:5.5,fontWeight:900,
-      fill:acc==='#FFD700'?dk:acc},sub),
     React.createElement('ellipse',{cx:40,cy:97,rx:8,ry:5.5,fill:acc,stroke:dk,strokeWidth:1.2}),
     React.createElement('circle',{cx:40,cy:89.5,r:5,fill:acc,stroke:dk,strokeWidth:1.2}),
     React.createElement('ellipse',{cx:45,cy:89.5,rx:2.5,ry:1.2,fill:acc,stroke:dk,strokeWidth:.8}),
@@ -601,15 +611,14 @@ function App(){
               className:'card'+(vol.owned?' own':'')+(vol.upcoming?' up':''),
               onClick:()=>loadDetail(vol)},
               E('div',{style:{aspectRatio:'8/11',overflow:'hidden'}},
-                E(Cover,{nr:vol.nr,owned:vol.owned,upcoming:vol.upcoming})
+                E(Cover,{nr:vol.nr,owned:vol.owned,upcoming:vol.upcoming,year:vol.year})
               ),
               E('div',{style:{padding:'3px 5px 17px',borderTop:'2px solid #1A1A2E'}},
-                E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:11,
-                  color:vol.upcoming?'#FF8C00':'#0066CC',letterSpacing:.5,lineHeight:1}},'LTB ',vol.nr),
-                vol.title&&E('div',{style:{fontSize:7,fontWeight:900,lineHeight:1.25,marginTop:2,color:'#333',
-                  overflow:'hidden',textOverflow:'ellipsis',
-                  display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}},vol.title),
-                E('div',{style:{fontSize:7,color:'#aaa',marginTop:1}},vol.year)
+                vol.title
+                  ? E('div',{style:{fontSize:7,fontWeight:900,lineHeight:1.2,color:'#333',
+                      overflow:'hidden',textOverflow:'ellipsis',
+                      display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},vol.title)
+                  : E('div',{style:{fontSize:7,color:'#aaa',lineHeight:1.2}},vol.year)
               ),
               E('button',{
                 style:{position:'absolute',bottom:0,right:0,width:28,height:24,

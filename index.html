@@ -502,12 +502,12 @@ function App(){
       ),
 
       /* Zeile 2: Statistik-Chips + Fortschrittsbalken */
-      E('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'nowrap'}},
+      E('div',{style:{display:'flex',alignItems:'center',gap:5,flexWrap:'nowrap'}},
         ...[['Gesamt',released.length,'#0066CC'],['✓',owned.length,'#00AA44'],
             ['✗',missing.length,'#E8152A'],[pct+'%',null,'#FF8C00']].map(([l,v,col],i)=>
           E('div',{key:i,style:{background:'#fff',border:'2px solid #1A1A2E',
-            padding:'2px 7px',boxShadow:'2px 2px 0 #1A1A2E',textAlign:'center',flexShrink:0}},
-            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:16,color:col,lineHeight:1}},
+            padding:'1px 5px',boxShadow:'2px 2px 0 #1A1A2E',textAlign:'center',flexShrink:0}},
+            E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:14,color:col,lineHeight:1}},
               v!==null?v+' '+l:l),
             v!==null&&E('div',{style:{fontSize:7,fontWeight:900,color:'#666',lineHeight:1}},
               i===0?'Bände':i===1?'Besitz':'Fehlen')
@@ -519,12 +519,12 @@ function App(){
       ),
 
       /* Zeile 3: Aktions-Buttons alle in einer Zeile */
-      E('div',{style:{display:'flex',gap:6,alignItems:'center'}},
-        E('button',{className:'btn dk',style:{fontSize:12,padding:'6px 10px',flex:1},
+      E('div',{style:{display:'flex',gap:5,alignItems:'center'}},
+        E('button',{className:'btn dk',style:{fontSize:11,padding:'4px 8px',flex:1},
           onClick:()=>setBulk(true)},'⚡ Bulk'),
-        E('button',{className:'btn',style:{fontSize:12,padding:'6px 10px',flex:1},
+        E('button',{className:'btn',style:{fontSize:11,padding:'4px 8px',flex:1},
           onClick:()=>checkNew()},'🔄 Neu?'),
-        E('button',{className:'btn dk',style:{fontSize:14,padding:'6px 12px'},
+        E('button',{className:'btn dk',style:{fontSize:13,padding:'4px 10px'},
           onClick:()=>setSettingsOpen(true)},'⚙️')
       )
     )
@@ -579,7 +579,7 @@ function App(){
       ? E('div',{style:{textAlign:'center',padding:'70px 20px'}},
           E('div',{style:{fontFamily:'Bangers,Impact,cursive',fontSize:30,color:'#ccc',letterSpacing:3}},
             'KEINE BÄNDE GEFUNDEN'))
-      : E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(68px,1fr))',gap:8}},
+      : E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(62px,1fr))',gap:8}},
           ...filtered.map(vol=>
             E('div',{key:vol.nr,
               className:'card'+(vol.owned?' own':'')+(vol.upcoming?' up':''),

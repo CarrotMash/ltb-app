@@ -84,11 +84,15 @@ function buildPromptNew() {
 }
 
 function detailPrompt(nr, title) {
-  const t = title ? ('"' + title + '"') : ('Band ' + nr);
   return 'Nenne die Geschichten (Kapitel) aus Walt Disney Lustiges Taschenbuch LTB Nr.' + nr +
     (title ? ' "' + title + '"' : '') + ' (Egmont Ehapa, Deutschland). ' +
+    'Pruefe ausserdem ob dieser Band eine Besonderheit hat – z.B.: Jubilaeumsband (100, 200, 300 usw.), ' +
+    'Crossover mit Marvel oder anderen Franchises, erster oder letzter Auftritt einer Figur, ' +
+    'besonderes Titelthema (Olympia, WM, Jubilaeum einer Figur), ungewoehnliches Format oder Sonderausstattung, ' +
+    'oder ein anderes herausragendes Merkmal das Sammler kennen sollten. ' +
+    'Falls keine solche Besonderheit vorliegt, setze besonderheit auf null. ' +
     'Antworte NUR mit folgendem JSON, ohne Markdown, ohne Erklaerung: ' +
-    '{"geschichten":[{"titel":"Titel","figuren":"Figur1, Figur2"}],"besonderheit":null}';
+    '{"geschichten":[{"titel":"Titel","figuren":"Figur1, Figur2"}],"besonderheit":"Text oder null"}';
 }
 
 const {useState,useEffect,useCallback} = React;
